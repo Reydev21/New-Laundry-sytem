@@ -1,0 +1,16 @@
+{
+  "ignore": [
+    "backups/*",
+    "scratch/*",
+    "*.json",
+    "*.log"
+  ],
+  "watch": [
+    "server.js",
+    "controllers/*",
+    "routes/*",
+    "middleware/*",
+    "util/*",
+    "config/*"
+  ]
+}
