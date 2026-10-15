@@ -102,15 +102,41 @@ exports.login = async (req, res, next) => {
 
     const apiUser = toApi(row);
 
+    const otpResult = await createOtp(apiUser._id);
+    const emailSend = await sendOtpEmail({
+      to: apiUser.email,
+      name: apiUser.name,
+      otp: otpResult.otpCode,
+    });
+    const tempToken = jwt.sign(
+      { id: apiUser._id, isPreAuth: true },
+      process.env.JWT_SECRET,
+      { expiresIn: "10m" }
+    );
+
     await logActivity({
       req,
       user: apiUser,
-      action: "LOGIN_SUCCESS",
+      action: "LOGIN_OTP_SENT",
       resource: "users",
       resourceId: apiUser._id,
     });
 
-    res.json(withToken(apiUser, res));
+    console.log(`\n==========================================`);
+    console.log(`[LOGIN OTP] Email: ${apiUser.email}`);
+    if (exposeOtpForDevelopment) {
+      console.log(`[LOGIN OTP] Code: ${otpResult.otpCode}`);
+    }
+    console.log(`==========================================\n`);
+
+    res.json({
+      requiresOtp: true,
+      tempToken,
+      message: emailSend.sent
+        ? "A 6-digit sign-in code has been sent to your email. Enter it to complete login."
+        : "Sign-in OTP is ready. Enable SMTP to email it automatically.",
+      ...(exposeOtpForDevelopment ? { otpCode: otpResult.otpCode } : {}),
+    });
   } catch (err) {
     next(err);
   }

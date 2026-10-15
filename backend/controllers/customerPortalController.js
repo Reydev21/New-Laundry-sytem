@@ -206,18 +206,24 @@ exports.googleAuthCustomer = async (req, res, next) => {
     }
 
     if (!userRow) {
-      const userId = newId();
-      userRow = orThrow(await supabase
-        .from("users")
-        .insert({
-          id: userId,
-          name: payload.name.trim().slice(0, 120),
-          email,
-          password: await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10),
-          role: "customer",
-        })
-        .select()
-        .single());
+      const setupToken = jwt.sign(
+        { email, name: payload.name.trim().slice(0, 120), isPreAuth: true, purpose: "google-setup-password" },
+        process.env.JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+      await logActivity({
+        req,
+        action: "GOOGLE_SIGNUP_PASSWORD_REQUIRED",
+        resource: "users",
+        details: { email },
+      });
+      return res.json({
+        requiresPassword: true,
+        setupToken,
+        email,
+        name: payload.name.trim(),
+        message: "Welcome! Set a password to finish creating your account.",
+      });
     }
 
     const linkedProfile = orThrow(
@@ -240,6 +246,73 @@ exports.googleAuthCustomer = async (req, res, next) => {
       action: "GOOGLE_LOGIN_SUCCESS",
       resource: "users",
       resourceId: apiUser._id,
+    });
+
+    return res.json(withToken(apiUser, res));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Complete Google sign-up: set password, create account, start session
+ */
+exports.completeGoogleSignup = async (req, res, next) => {
+  try {
+    const { setupToken, password } = req.body;
+    if (typeof setupToken !== "string" || !setupToken) {
+      return res.status(400).json({ message: "Google sign-up session is required." });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(setupToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Google sign-up session expired. Please continue with Google again." });
+    }
+    if (!decoded.isPreAuth || decoded.purpose !== "google-setup-password" || !decoded.email) {
+      return res.status(400).json({ message: "Invalid Google sign-up session." });
+    }
+
+    const pwdErr = validatePasswordStrength(password);
+    if (pwdErr) return res.status(400).json({ message: pwdErr });
+
+    const existing = orThrow(
+      await supabase.from("users").select("id").eq("email", decoded.email).maybeSingle()
+    );
+    if (existing) {
+      return res.status(409).json({ message: "An account with this email already exists. Please continue with Google again to sign in." });
+    }
+
+    const userId = newId();
+    const userRow = orThrow(await supabase
+      .from("users")
+      .insert({
+        id: userId,
+        name: decoded.name,
+        email: decoded.email,
+        password: await bcrypt.hash(password, 10),
+        role: "customer",
+      })
+      .select()
+      .single());
+
+    orThrow(await supabase.from("customers").insert({
+      id: newId(),
+      userId,
+      name: decoded.name,
+      phone: encrypt("0000000000"),
+      email: decoded.email,
+    }));
+
+    const apiUser = toApi(userRow);
+    await logActivity({
+      req,
+      user: apiUser,
+      action: "GOOGLE_SIGNUP_COMPLETED",
+      resource: "users",
+      resourceId: apiUser._id,
+      details: { email: apiUser.email },
     });
 
     return res.json(withToken(apiUser, res));

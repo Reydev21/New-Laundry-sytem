@@ -54,7 +54,7 @@ export default function Login() {
         err.response?.data?.message ||
         (err.response
           ? "Invalid email or password"
-          : "Cannot reach the server. Ensure backend is running on port 5000.")
+          : "Cannot reach the server. Ensure the backend is running.")
       );
     } finally {
       setLoading(false);
