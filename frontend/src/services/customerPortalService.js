@@ -27,6 +27,14 @@ export const googleAuthCustomer = async (googleUser) => {
   return res.data;
 };
 
+export const completeGoogleSignup = async (setupToken, password) => {
+  const res = await api.post("/customer/google-complete", { setupToken, password });
+  if (res.data?._id) {
+    persistUserProfile(res.data);
+  }
+  return res.data;
+};
+
 export const createCustomerOrder = async (orderData) => {
   const res = await api.post("/customer/orders", orderData);
   return res.data;

@@ -8,6 +8,7 @@ const {
   registerCustomer,
   verifyCustomerOtp,
   googleAuthCustomer,
+  completeGoogleSignup,
   createCustomerOrder,
   getMyOrders,
 } = require("../controllers/customerPortalController");
@@ -21,6 +22,7 @@ const authLimiter = rateLimit({
 router.post("/register", authLimiter, validateCustomerRegistration, registerCustomer);
 router.post("/verify-otp", authLimiter, verifyCustomerOtp);
 router.post("/google-auth", authLimiter, googleAuthCustomer);
+router.post("/google-complete", authLimiter, completeGoogleSignup);
 
 router.use(protect, authorize("customer"));
 router.route("/orders").post(createCustomerOrder).get(getMyOrders);

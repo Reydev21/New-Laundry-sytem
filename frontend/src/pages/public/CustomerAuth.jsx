@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { GoogleLogin } from "@react-oauth/google";
-import { registerCustomer, verifyCustomerOtp, googleAuthCustomer } from "../../services/customerPortalService";
+import { registerCustomer, verifyCustomerOtp, googleAuthCustomer, completeGoogleSignup } from "../../services/customerPortalService";
 import {
   login,
   requestPasswordReset,
@@ -25,6 +25,8 @@ export default function CustomerAuth() {
   const [otpCode, setOtpCode] = useState("");
   const [tempToken, setTempToken] = useState("");
   const [requiresOtp, setRequiresOtp] = useState(false);
+  const [googleSetup, setGoogleSetup] = useState(null);
+  const [googlePassword, setGooglePassword] = useState("");
   const [otpNotice, setOtpNotice] = useState("");
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [resetOtpCode, setResetOtpCode] = useState("");
@@ -101,13 +103,32 @@ export default function CustomerAuth() {
     setError("");
     setLoading(true);
     try {
-      await googleAuthCustomer({ credential });
-      navigate("/customer/dashboard");
+      const data = await googleAuthCustomer({ credential });
+      if (data.requiresPassword) {
+        setGoogleSetup(data);
+        setOtpNotice(data.message || "Set a password to finish creating your account.");
+      } else {
+        navigate("/customer/dashboard");
+      }
     } catch (err) {
       setError(
         err.response?.data?.message ||
         "Google sign-in could not reach the server. Make sure the backend is running."
       );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGooglePasswordSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await completeGoogleSignup(googleSetup.setupToken, googlePassword);
+      navigate("/customer/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not complete Google sign-up. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -177,16 +198,38 @@ export default function CustomerAuth() {
     <div className="customer-auth-page">
       <div className={`customer-auth-card${isSignUp ? " customer-auth-card-signup" : ""}${forgotPasswordMode ? " customer-auth-card-forgot" : ""}`}>
         <h2 className={`customer-auth-title${isSignUp ? " customer-auth-title-signup" : ""}${forgotPasswordMode ? " customer-auth-title-forgot" : ""}`}>
-          {requiresOtp ? "Verify Your OTP" : forgotPasswordMode ? "Reset Your Password" : isSignUp ? "Create Customer Account" : "Customer Login"}
+          {googleSetup ? "Set Your Password" : requiresOtp ? "Verify Your OTP" : forgotPasswordMode ? "Reset Your Password" : isSignUp ? "Create Customer Account" : "Customer Login"}
         </h2>
         <p className="customer-auth-subtitle">
-          {requiresOtp ? "Enter the 6-digit OTP code sent to your email/phone." : forgotPasswordMode ? "Enter your email to receive a reset code." : isSignUp ? "Sign up to track orders & book laundry online" : "Access your laundry orders and online payments"}
+          {googleSetup ? `Welcome ${googleSetup.name || ""}! Choose a password to finish creating your account.` : requiresOtp ? "Enter the 6-digit OTP code sent to your email." : forgotPasswordMode ? "Enter your email to receive a reset code." : isSignUp ? "Sign up to track orders & book laundry online" : "Access your laundry orders and online payments"}
         </p>
 
         {error && <div className="customer-auth-alert customer-auth-alert-error">{error}</div>}
         {otpNotice && <div className="customer-auth-alert customer-auth-alert-info">{otpNotice}</div>}
 
-        {requiresOtp ? (
+        {googleSetup ? (
+          <>
+            <form onSubmit={handleGooglePasswordSubmit} className="customer-auth-form">
+              <div className="customer-auth-field customer-auth-field-last">
+                <label>Password for {googleSetup.email}</label>
+                <input type="password" value={googlePassword} onChange={(e) => setGooglePassword(e.target.value)} required />
+                <p className="customer-auth-hint">Must be at least 8 chars with uppercase, lowercase, number, & special char.</p>
+              </div>
+              <button type="submit" disabled={loading} className="customer-auth-submit">
+                {loading ? "Creating account..." : "Set Password & Continue"}
+              </button>
+            </form>
+            <div className="customer-auth-actions customer-auth-actions-center">
+              <button
+                type="button"
+                onClick={() => { setGoogleSetup(null); setGooglePassword(""); setError(""); setOtpNotice(""); }}
+                className="customer-auth-link-button"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : requiresOtp ? (
           <form onSubmit={handleVerifyOtp} className="customer-auth-form">
             <input
               type="text"
@@ -198,7 +241,7 @@ export default function CustomerAuth() {
               className="customer-auth-otp-input"
             />
             <button type="submit" disabled={loading || otpCode.length !== 6} className="customer-auth-submit">
-              {loading ? "Verifying OTP..." : "Verify & Complete Signup"}
+              {loading ? "Verifying OTP..." : isSignUp ? "Verify & Complete Signup" : "Verify & Login"}
             </button>
           </form>
         ) : forgotPasswordMode ? (
