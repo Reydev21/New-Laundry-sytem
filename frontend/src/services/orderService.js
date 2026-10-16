@@ -1,10 +1,17 @@
 import api from "./api";
+import { reauthHeaders } from "./actionReauth";
 
 export const getOrders = (params = {}) =>
   api.get("/orders", { params }).then((r) => r.data);
 
 export const createOrder = (data) =>
   api.post("/orders", data).then((r) => r.data);
+
+export const updateOrder = (id, data, reauthToken) =>
+  api.put(`/orders/${id}`, data, reauthHeaders(reauthToken)).then((r) => r.data);
+
+export const deleteOrder = (id, reauthToken) =>
+  api.delete(`/orders/${id}`, reauthHeaders(reauthToken)).then((r) => r.data);
 
 export const updateOrderStatus = (id, orderStatus) =>
   api.put(`/orders/${id}/status`, { orderStatus }).then((r) => r.data);

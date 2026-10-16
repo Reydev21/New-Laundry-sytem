@@ -1,5 +1,6 @@
 const supabase = require("../config/supabase");
 const { newId, toApi, orThrow, count, pick } = require("../util/rows");
+const { logActivity } = require("../util/auditLogger");
 
 const EDITABLE = ["serviceName", "description", "price", "unit", "status"];
 
@@ -23,6 +24,13 @@ exports.createService = async (req, res, next) => {
         .select()
         .single()
     );
+    await logActivity({
+      req,
+      action: "SERVICE_CREATED",
+      resource: "services",
+      resourceId: service.id,
+      details: { serviceName: service.serviceName, price: service.price, unit: service.unit },
+    });
     res.status(201).json(toApi(service));
   } catch (err) {
     next(err);
@@ -38,6 +46,13 @@ exports.updateService = async (req, res, next) => {
         .eq("id", req.params.id)
         .select()
     );
+    await logActivity({
+      req,
+      action: "SERVICE_UPDATED",
+      resource: "services",
+      resourceId: req.params.id,
+      details: pick(req.body, EDITABLE),
+    });
     res.json(toApi(rows[0] ?? null));
   } catch (err) {
     next(err);
@@ -60,6 +75,13 @@ exports.deleteService = async (req, res, next) => {
     }
 
     orThrow(await supabase.from("services").delete().eq("id", service.id));
+    await logActivity({
+      req,
+      action: "SERVICE_DELETED",
+      resource: "services",
+      resourceId: service.id,
+      details: { serviceName: service.serviceName },
+    });
     res.json({ message: "Service deleted" });
   } catch (err) {
     next(err);

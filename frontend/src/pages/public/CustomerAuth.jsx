@@ -8,6 +8,7 @@ import {
   verifyPasswordResetOtp,
   resetPassword,
 } from "../../services/authService";
+import PasswordInput from "../../components/PasswordInput";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
@@ -41,6 +42,7 @@ export default function CustomerAuth() {
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setOtpNotice("");
     setLoading(true);
     try {
       const data = await login(formData.email, formData.password);
@@ -104,7 +106,7 @@ export default function CustomerAuth() {
     } catch (err) {
       setError(
         err.response?.data?.message ||
-        "Google sign-in could not reach the server. Make sure the backend is running on port 5000."
+        "Google sign-in could not reach the server. Make sure the backend is running."
       );
     } finally {
       setLoading(false);
@@ -126,7 +128,9 @@ export default function CustomerAuth() {
     } catch (err) {
       setError(
         err.response?.data?.message ||
-        "Could not send password reset OTP. Please check SMTP and Supabase setup."
+        (err.request
+          ? "Cannot reach the server. Ensure the backend is running."
+          : "Could not send password reset OTP.")
       );
     } finally {
       setLoading(false);
@@ -161,7 +165,7 @@ export default function CustomerAuth() {
       setResetToken("");
       setResetOtpCode("");
       setNewPassword("");
-      setFormData((prev) => ({ ...prev, password: "" }));
+      navigate(data.role === "customer" ? "/customer/dashboard" : "/admin");
     } catch (err) {
       setError(err.response?.data?.message || "Password reset failed.");
     } finally {
@@ -171,8 +175,8 @@ export default function CustomerAuth() {
 
   return (
     <div className="customer-auth-page">
-      <div className={`customer-auth-card${isSignUp ? " customer-auth-card-signup" : ""}`}>
-        <h2 className={`customer-auth-title${isSignUp ? " customer-auth-title-signup" : ""}`}>
+      <div className={`customer-auth-card${isSignUp ? " customer-auth-card-signup" : ""}${forgotPasswordMode ? " customer-auth-card-forgot" : ""}`}>
+        <h2 className={`customer-auth-title${isSignUp ? " customer-auth-title-signup" : ""}${forgotPasswordMode ? " customer-auth-title-forgot" : ""}`}>
           {requiresOtp ? "Verify Your OTP" : forgotPasswordMode ? "Reset Your Password" : isSignUp ? "Create Customer Account" : "Customer Login"}
         </h2>
         <p className="customer-auth-subtitle">
@@ -234,7 +238,13 @@ export default function CustomerAuth() {
               <form onSubmit={handlePasswordReset} className="customer-auth-form">
                 <div className="customer-auth-field">
                   <label>New Password</label>
-                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+                  <PasswordInput
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    placeholder="New Password"
+                  />
                 </div>
                 <button type="submit" disabled={loading} className="customer-auth-submit">
                   {loading ? "Updating..." : "Create New Password"}
@@ -311,7 +321,13 @@ export default function CustomerAuth() {
 
               <div className="customer-auth-field customer-auth-field-last">
                 <label>Password</label>
-                <input type="password" name="password" value={formData.password} onChange={handleChange} required />
+                <PasswordInput
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  autoComplete={isSignUp ? "new-password" : "current-password"}
+                />
                 {isSignUp && <p className="customer-auth-hint">Must be at least 8 chars with uppercase, lowercase, number, & special char.</p>}
               </div>
 

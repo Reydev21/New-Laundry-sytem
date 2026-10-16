@@ -13,6 +13,7 @@ export default function Customers() {
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const load = () => getCustomers(search).then(setCustomers);
 
@@ -20,6 +21,8 @@ export default function Customers() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving) return;
+    setSaving(true);
     try {
       if (editingId) {
         await updateCustomer(editingId, form);
@@ -33,6 +36,8 @@ export default function Customers() {
       load();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to save customer");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -86,7 +91,7 @@ export default function Customers() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
               <div className="modal-actions">
                 <button type="button" onClick={cancelEdit}>Cancel</button>
-                <button type="submit">{editingId ? "Save Changes" : "Save Customer"}</button>
+                <button type="submit" disabled={saving}>{saving ? "Saving..." : editingId ? "Save Changes" : "Save Customer"}</button>
               </div>
             </form>
           </div>

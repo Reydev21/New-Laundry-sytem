@@ -111,8 +111,21 @@ exports.getOrder = async (req, res, next) => {
 exports.createOrder = async (req, res, next) => {
   try {
     const { customerId, serviceId, weight } = req.body;
-    if (!customerId) return res.status(400).json({ message: "Customer is required" });
-    if (!(Number(weight) > 0)) return res.status(400).json({ message: "Weight must be greater than 0" });
+    if (typeof customerId !== "string" || !customerId.trim() || customerId.length > 80) {
+      return res.status(400).json({ message: "A valid customer is required" });
+    }
+    if (typeof serviceId !== "string" || !serviceId.trim() || serviceId.length > 80) {
+      return res.status(400).json({ message: "A valid service is required" });
+    }
+    const numericWeight = Number(weight);
+    if (!Number.isFinite(numericWeight) || numericWeight <= 0) {
+      return res.status(400).json({ message: "Weight must be greater than 0" });
+    }
+
+    const customer = orThrow(
+      await supabase.from("customers").select("id").eq("id", customerId).maybeSingle()
+    );
+    if (!customer) return res.status(404).json({ message: "Customer not found" });
 
     const service = orThrow(
       await supabase.from("services").select().eq("id", serviceId).maybeSingle()
@@ -129,9 +142,9 @@ exports.createOrder = async (req, res, next) => {
           orderNumber,
           customerId,
           serviceId,
-          weight: Number(weight),
+          weight: numericWeight,
           pricePerKg: service.price,
-          totalAmount: service.price * Number(weight),
+          totalAmount: service.price * numericWeight,
         })
         .select()
         .single()
@@ -162,11 +175,28 @@ exports.updateOrder = async (req, res, next) => {
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     const update = {};
-    if (customerId) update.customerId = customerId;
-    if (serviceId) update.serviceId = serviceId;
+    if (customerId !== undefined) {
+      if (typeof customerId !== "string" || !customerId.trim() || customerId.length > 80) {
+        return res.status(400).json({ message: "A valid customer is required" });
+      }
+      const customer = orThrow(
+        await supabase.from("customers").select("id").eq("id", customerId).maybeSingle()
+      );
+      if (!customer) return res.status(404).json({ message: "Customer not found" });
+      update.customerId = customerId;
+    }
+    if (serviceId !== undefined) {
+      if (typeof serviceId !== "string" || !serviceId.trim() || serviceId.length > 80) {
+        return res.status(400).json({ message: "A valid service is required" });
+      }
+      update.serviceId = serviceId;
+    }
     if (weight !== undefined) {
-      if (!(Number(weight) > 0)) return res.status(400).json({ message: "Weight must be greater than 0" });
-      update.weight = Number(weight);
+      const numericWeight = Number(weight);
+      if (!Number.isFinite(numericWeight) || numericWeight <= 0) {
+        return res.status(400).json({ message: "Weight must be greater than 0" });
+      }
+      update.weight = numericWeight;
     }
 
     if (serviceId || weight !== undefined) {

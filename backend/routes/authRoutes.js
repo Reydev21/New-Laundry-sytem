@@ -5,12 +5,15 @@ const authorize = require("../middleware/roleMiddleware");
 const { validateRegistration, validateLogin } = require("../middleware/validationMiddleware");
 const {
   register,
+  registerStaffAccount,
   login,
   verifyOtp,
   resendOtp,
   requestPasswordReset,
   verifyPasswordResetOtp,
   resetPassword,
+  requestActionOtp,
+  verifyActionOtp,
   getCsrfToken,
   logout,
 } = require("../controllers/authController");
@@ -32,7 +35,10 @@ const passwordResetLimiter = rateLimit({
 
 router.get("/csrf-token", getCsrfToken);
 router.post("/logout", protect, logout);
+router.post("/action-otp/request", protect, authLimiter, requestActionOtp);
+router.post("/action-otp/verify", protect, authLimiter, verifyActionOtp);
 router.post("/login", authLimiter, validateLogin, login);
+router.post("/signup", authLimiter, registerStaffAccount);
 router.post("/verify-otp", authLimiter, verifyOtp);
 router.post("/resend-otp", authLimiter, resendOtp);
 router.post("/forgot-password", passwordResetLimiter, requestPasswordReset);

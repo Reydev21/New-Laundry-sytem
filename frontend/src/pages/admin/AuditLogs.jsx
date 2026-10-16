@@ -8,6 +8,7 @@ export default function AuditLogs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [backupStatus, setBackupStatus] = useState("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     fetchLogs();
@@ -41,6 +42,22 @@ export default function AuditLogs() {
     }
   };
 
+  const handleReset = () => {
+    setSearch("");
+    fetchLogs();
+  };
+
+  const query = search.trim().toLowerCase();
+  const matches = (values) =>
+    !query || values.some((value) => String(value ?? "").toLowerCase().includes(query));
+
+  const visibleAuditLogs = auditLogs.filter((log) =>
+    matches([log.userName, log.userRole, log.action, log.resource, log.ipAddress, log.details])
+  );
+  const visibleTransactionLogs = transactionLogs.filter((t) =>
+    matches([t.type, t.paymentMethod, t.paymentStatus, t.reference, t.createdBy, t.amount])
+  );
+
   return (
     <div className="audit-logs-page" style={{ padding: "1.5rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
@@ -48,7 +65,47 @@ export default function AuditLogs() {
           <h1 style={{ fontSize: "1.75rem", fontWeight: "bold" }}>Security & Audit Trails</h1>
           <p style={{ color: "#6b7280" }}>Activity Audit Logs, Financial Transaction Logs, and Automated Backups</p>
         </div>
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search logs…"
+            style={{
+              padding: "0.5rem 0.75rem",
+              border: "1px solid #cbd5e1",
+              borderRadius: "0.375rem",
+              minWidth: "200px",
+            }}
+          />
+          <button
+            onClick={handleReset}
+            style={{
+              padding: "0.5rem 1rem",
+              backgroundColor: "#ffffff",
+              color: "#4b5563",
+              border: "1px solid #cbd5e1",
+              borderRadius: "0.375rem",
+              cursor: "pointer",
+              fontWeight: "500",
+            }}
+          >
+            Reset
+          </button>
+          <button
+            onClick={fetchLogs}
+            style={{
+              padding: "0.5rem 1rem",
+              backgroundColor: "#ffffff",
+              color: "#2563eb",
+              border: "1px solid #cbd5e1",
+              borderRadius: "0.375rem",
+              cursor: "pointer",
+              fontWeight: "500",
+            }}
+          >
+            Refresh
+          </button>
           <button
             onClick={handleTriggerBackup}
             style={{
@@ -63,7 +120,7 @@ export default function AuditLogs() {
           >
             Trigger Instant DB Backup
           </button>
-          {backupStatus && <span style={{ marginLeft: "0.75rem", color: "#059669", fontSize: "0.875rem" }}>{backupStatus}</span>}
+          {backupStatus && <span style={{ color: "#059669", fontSize: "0.875rem" }}>{backupStatus}</span>}
         </div>
       </div>
 
@@ -82,7 +139,7 @@ export default function AuditLogs() {
             cursor: "pointer",
           }}
         >
-          Activity Audit Trails ({auditLogs.length})
+          Activity Audit Trails ({visibleAuditLogs.length})
         </button>
         <button
           onClick={() => setActiveTab("financial")}
@@ -96,7 +153,7 @@ export default function AuditLogs() {
             cursor: "pointer",
           }}
         >
-          Financial Transaction Logs ({transactionLogs.length})
+          Financial Transaction Logs ({visibleTransactionLogs.length})
         </button>
       </div>
 
@@ -117,7 +174,7 @@ export default function AuditLogs() {
               </tr>
             </thead>
             <tbody>
-              {auditLogs.map((log) => (
+              {visibleAuditLogs.map((log) => (
                 <tr key={log._id || log.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                   <td style={{ padding: "0.75rem" }}>{new Date(log.createdAt).toLocaleString()}</td>
                   <td style={{ padding: "0.75rem", fontWeight: "600" }}>{log.userName || "System"}</td>
@@ -128,10 +185,10 @@ export default function AuditLogs() {
                   <td style={{ padding: "0.75rem", maxWidth: "300px", wordBreak: "break-word" }}>{log.details}</td>
                 </tr>
               ))}
-              {auditLogs.length === 0 && (
+              {visibleAuditLogs.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ padding: "1.5rem", textAlign: "center", color: "#6b7280" }}>
-                    No activity audit logs recorded yet.
+                    {query ? "No activity audit logs match your search." : "No activity audit logs recorded yet."}
                   </td>
                 </tr>
               )}
@@ -153,7 +210,7 @@ export default function AuditLogs() {
               </tr>
             </thead>
             <tbody>
-              {transactionLogs.map((t) => (
+              {visibleTransactionLogs.map((t) => (
                 <tr key={t._id || t.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                   <td style={{ padding: "0.75rem" }}>{new Date(t.createdAt).toLocaleString()}</td>
                   <td style={{ padding: "0.75rem", fontWeight: "600", color: "#047857" }}>{t.type}</td>
@@ -164,10 +221,10 @@ export default function AuditLogs() {
                   <td style={{ padding: "0.75rem" }}>{t.createdBy}</td>
                 </tr>
               ))}
-              {transactionLogs.length === 0 && (
+              {visibleTransactionLogs.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ padding: "1.5rem", textAlign: "center", color: "#6b7280" }}>
-                    No financial transaction logs recorded yet.
+                    {query ? "No financial transaction logs match your search." : "No financial transaction logs recorded yet."}
                   </td>
                 </tr>
               )}

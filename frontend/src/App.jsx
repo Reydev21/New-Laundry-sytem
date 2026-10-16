@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 // Layouts
 import PublicLayout from "./layouts/PublicLayout";
 import AdminLayout from "./layouts/AdminLayout";
+import CustomerLayout from "./layouts/CustomerLayout";
 
 // Public Pages
 import Home from "./pages/public/Home";
@@ -13,12 +14,15 @@ import Contact from "./pages/public/Contact";
 import Login from "./pages/public/Login";
 import CustomerAuth from "./pages/public/CustomerAuth";
 import CustomerDashboard from "./pages/customer/CustomerDashboard";
+import CustomerBook from "./pages/customer/CustomerBook";
+import CustomerOrders from "./pages/customer/CustomerOrders";
 
 // Admin/Staff Pages
 import Dashboard from "./pages/admin/Dashboard";
 import Orders from "./pages/admin/Orders";
 import Customers from "./pages/admin/Customers";
 import ServicesAdmin from "./pages/admin/Services";
+import Staff from "./pages/admin/Staff";
 import Payments from "./pages/admin/Payments";
 import Reports from "./pages/admin/Reports";
 import Settings from "./pages/admin/Settings";
@@ -42,14 +46,21 @@ export default function App() {
         <Route path="/admin/login" element={<Login />} />
         <Route path="/customer/login" element={<CustomerAuth />} />
         <Route path="/customer/register" element={<CustomerAuth />} />
-        <Route
-          path="/customer/dashboard"
-          element={
-            <ProtectedRoute allowedRoles={["customer"]}>
-              <CustomerDashboard />
-            </ProtectedRoute>
-          }
-        />
+      </Route>
+
+      {/* ============ CUSTOMER PROTECTED ROUTES ============ */}
+      <Route
+        path="/customer"
+        element={
+          <ProtectedRoute allowedRoles={["customer"]}>
+            <CustomerLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/customer/dashboard" replace />} />
+        <Route path="dashboard" element={<CustomerDashboard />} />
+        <Route path="book" element={<CustomerBook />} />
+        <Route path="orders" element={<CustomerOrders />} />
       </Route>
 
       {/* ============ ADMIN / STAFF PROTECTED ROUTES ============ */}
@@ -82,6 +93,14 @@ export default function App() {
           element={
             <AdminRoute>
               <Reports />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="staff"
+          element={
+            <AdminRoute>
+              <Staff />
             </AdminRoute>
           }
         />

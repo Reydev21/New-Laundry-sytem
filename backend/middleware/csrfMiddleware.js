@@ -38,6 +38,7 @@ const csrfProtection = (req, res, next) => {
   if (
     req.path.startsWith("/api/orders/track") ||
     req.path === "/api/auth/login" ||
+    req.path === "/api/auth/signup" ||
     req.path === "/api/auth/verify-otp" ||
     req.path === "/api/auth/resend-otp" ||
     req.path === "/api/auth/forgot-password" ||

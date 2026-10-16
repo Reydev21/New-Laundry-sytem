@@ -14,6 +14,11 @@ export const login = async (email, password) => {
   return data;
 };
 
+export const signupStaff = async ({ name, email, password, role, inviteCode }) => {
+  const { data } = await api.post("/auth/signup", { name, email, password, role, inviteCode });
+  return data;
+};
+
 export const verifyOtp = async (tempToken, otpCode) => {
   const { data } = await api.post("/auth/verify-otp", { tempToken, otpCode });
   if (data._id) {
@@ -39,6 +44,9 @@ export const verifyPasswordResetOtp = async (email, otpCode) => {
 
 export const resetPassword = async (resetToken, newPassword) => {
   const { data } = await api.post("/auth/reset-password", { resetToken, newPassword });
+  if (data._id) {
+    persistUserProfile(data);
+  }
   return data;
 };
 

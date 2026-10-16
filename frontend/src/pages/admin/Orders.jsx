@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { getOrders, createOrder, updateOrderStatus } from "../../services/orderService";
+import { getOrders, createOrder, updateOrderStatus, deleteOrder } from "../../services/orderService";
 import { getCustomers } from "../../services/customerService";
 import { getServices } from "../../services/serviceService";
 import { confirmPayment } from "../../services/paymentService";
 import StatusBadge from "../../components/StatusBadge";
 import SearchBar from "../../components/SearchBar";
 import ReceiptModal from "../../components/ReceiptModal";
+import useActionReauth from "../../hooks/useActionReauth";
 
 const STATUSES = ["Received", "Washing", "Drying", "Folding", "Ready for Pickup", "Claimed"];
 const PAYMENT_STATUSES = ["UNPAID", "PARTIALLY PAID", "PAID"];
@@ -21,6 +22,7 @@ export default function Orders() {
   const [customers, setCustomers] = useState([]);
   const [services, setServices] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [creatingOrder, setCreatingOrder] = useState(false);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [paymentError, setPaymentError] = useState("");
@@ -28,6 +30,7 @@ export default function Orders() {
   const [savingOrderIds, setSavingOrderIds] = useState({});
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState(null);
   const savingOrdersRef = useRef(new Set());
+  const { confirm, modal } = useActionReauth();
 
   const [form, setForm] = useState({ customerId: "", serviceId: "", weight: 1 });
 
@@ -40,6 +43,8 @@ export default function Orders() {
 
   const handleCreateOrder = async (e) => {
     e.preventDefault();
+    if (creatingOrder) return;
+    setCreatingOrder(true);
     try {
       await createOrder(form);
       setShowForm(false);
@@ -48,6 +53,8 @@ export default function Orders() {
       load();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to create order");
+    } finally {
+      setCreatingOrder(false);
     }
   };
 
@@ -59,6 +66,18 @@ export default function Orders() {
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update status");
     }
+  };
+
+  const handleDeleteOrder = (order) => {
+    confirm(async (reauthToken) => {
+      try {
+        await deleteOrder(order._id, reauthToken);
+        setError("");
+        load();
+      } catch (err) {
+        setError(err.response?.data?.message || "Failed to void/delete order");
+      }
+    });
   };
 
   const handleConfirmPayment = async (order) => {
@@ -147,7 +166,7 @@ export default function Orders() {
               <label htmlFor="order-weight">Weight (kg)</label>
               <input id="order-weight" type="number" min="0.1" step="0.1" value={form.weight} onChange={(e) => setForm({ ...form, weight: Number(e.target.value) })} required />
             </div>
-            <button type="submit">Create Order</button>
+            <button type="submit" disabled={creatingOrder}>{creatingOrder ? "Creating..." : "Create Order"}</button>
           </form>
         </div>
       )}
@@ -248,6 +267,9 @@ export default function Orders() {
                       <button type="button" style={{ backgroundColor: "#f1f5f9", color: "#2563eb", border: "1px solid #cbd5e1" }} onClick={() => setSelectedReceiptOrder(o)}>
                         🖨️ Receipt
                       </button>
+                      <button type="button" style={{ backgroundColor: "#fef2f2", color: "#b42318", border: "1px solid #fecaca" }} onClick={() => handleDeleteOrder(o)}>
+                        Void
+                      </button>
                     </div>
                   );
                 })()}
@@ -264,6 +286,8 @@ export default function Orders() {
           onClose={() => setSelectedReceiptOrder(null)}
         />
       )}
+
+      {modal}
     </div>
   );
 }

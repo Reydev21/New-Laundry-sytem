@@ -1,6 +1,6 @@
-// 1. FORCE GOOGLE DNS (This must be at the very top)
-const dns = require('node:dns');
-dns.setServers(['8.8.8.8', '1.1.1.1']);
+// 1. Prefer IPv4 (IPv6/NAT64 addresses on this network can blackhole TLS and hang startup)
+const dns = require("node:dns");
+dns.setDefaultResultOrder("ipv4first");
 
 // 2. Standard Imports
 const express = require("express");
@@ -14,6 +14,7 @@ const supabase = require("./config/supabase");
 const errorMiddleware = require("./middleware/errorMiddleware");
 const { csrfProtection } = require("./middleware/csrfMiddleware");
 const { runDatabaseBackup } = require("./util/backupManager");
+const { getInviteCode } = require("./util/inviteCode");
 
 const authRoutes = require("./routes/authRoutes");
 const customerRoutes = require("./routes/customerRoutes");
@@ -23,6 +24,7 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const auditRoutes = require("./routes/auditRoutes");
 const customerPortalRoutes = require("./routes/customerPortalRoutes");
+const userRoutes = require("./routes/userRoutes");
 
 // 4. Security Imports
 const helmet = require("helmet");
@@ -35,6 +37,14 @@ const allowedOrigins = new Set([
   ...(process.env.CORS_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean),
   ...(!isProduction ? ["http://localhost:5173", "http://127.0.0.1:5173"] : []),
 ]);
+const isAllowedDevelopmentOrigin = (origin) => {
+  try {
+    const { hostname, protocol } = new URL(origin);
+    return !isProduction && protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(hostname);
+  } catch {
+    return false;
+  }
+};
 app.set("trust proxy", isProduction ? 1 : false);
 
 if (isProduction) {
@@ -82,12 +92,14 @@ const checkSupabase = async () => {
 // 6. Security Middleware & Headers (Requirement 5 & Requirement 2)
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    if (!origin || allowedOrigins.has(origin) || isAllowedDevelopmentOrigin(origin)) {
+      return callback(null, true);
+    }
     return callback(Object.assign(new Error("Origin not allowed by CORS"), { status: 403 }));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token", "X-Action-Reauth"],
 }));
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan("dev"));
@@ -134,6 +146,7 @@ app.use("/api/services", serviceRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/logs", auditRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/customer", customerPortalRoutes);
 
 // 8. Error Handling Middleware
@@ -157,5 +170,13 @@ const PORT = Number(process.env.PORT || 5000);
 checkSupabase().then(() =>
   app.listen(PORT, () => {
     console.log(`Server running securely on port ${PORT}`);
+    getInviteCode()
+      .then((code) => {
+        console.log(`\n==========================================`);
+        console.log(`[SIGNUP] Staff/Admin invite code: ${code}`);
+        console.log(`[SIGNUP] Share this code with people who may create an account.`);
+        console.log(`==========================================\n`);
+      })
+      .catch((err) => console.warn("[SIGNUP] Could not load invite code:", err.message));
   })
 );

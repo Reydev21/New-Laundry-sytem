@@ -26,7 +26,7 @@ const buildTransporter = () => {
   });
 };
 
-const sendOtpEmail = async ({ to, name, otp }) => {
+const sendOtpEmail = async ({ to, name, otp, subject, intro }) => {
   if (!to || !otp) {
     return { sent: false, reason: "Missing recipient or OTP code" };
   }
@@ -37,15 +37,19 @@ const sendOtpEmail = async ({ to, name, otp }) => {
     return { sent: false, reason: "SMTP not configured" };
   }
 
+  const mailSubject = subject || "Your LaundriTrack OTP Code";
+  const introText = intro ? `${intro}\n\n` : "";
+
   try {
     const info = await transporter.sendMail({
       from: process.env.EMAIL_FROM || process.env.SMTP_USER,
       to,
-      subject: "Your LaundriTrack OTP Code",
-      text: `Hello ${name || "there"},\n\nYour OTP code is ${otp}. It expires in 5 minutes.\n\nDo not share this code with anyone.`,
+      subject: mailSubject,
+      text: `Hello ${name || "there"},\n\n${introText}Your OTP code is ${otp}. It expires in 5 minutes.\n\nDo not share this code with anyone.`,
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
           <h3>Hello ${name || "there"},</h3>
+          ${intro ? `<p>${intro}</p>` : ""}
           <p>Your OTP code is:</p>
           <p style="font-size: 28px; font-weight: bold; letter-spacing: 0.2em; margin: 12px 0;">${otp}</p>
           <p>It expires in 5 minutes.</p>

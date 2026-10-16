@@ -6,6 +6,7 @@ const { newId, toApi, orThrow } = require("../util/rows");
 const { createOtp, verifyOtp } = require("../util/otpService");
 const { sendOtpEmail } = require("../util/emailService");
 const { logActivity } = require("../util/auditLogger");
+const { getInviteCode, verifyInviteCode } = require("../util/inviteCode");
 const { generateCsrfToken } = require("../middleware/csrfMiddleware");
 const { validatePasswordStrength } = require("../middleware/validationMiddleware");
 const { sessionIdFromToken, sessionIdFromRequest, setSessionCookie, clearSessionCookie } = require("../util/sessionCookie");
@@ -102,6 +103,47 @@ exports.login = async (req, res, next) => {
 
     const apiUser = toApi(row);
 
+    // Admin accounts must confirm an email OTP before a session is issued (2FA policy).
+    // Staff sign in with email + password only so daily counter work stays fast.
+    if (apiUser.role === "admin") {
+      const otpResult = await createOtp(apiUser._id);
+      const emailSend = await sendOtpEmail({
+        to: apiUser.email,
+        name: apiUser.name,
+        otp: otpResult.otpCode,
+      });
+      const tempToken = jwt.sign(
+        { id: apiUser._id, isPreAuth: true },
+        process.env.JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+
+      console.log(`\n==========================================`);
+      console.log(`[2FA OTP] Email: ${apiUser.email}`);
+      if (exposeOtpForDevelopment) {
+        console.log(`[2FA OTP] Code: ${otpResult.otpCode}`);
+      }
+      console.log(`==========================================\n`);
+
+      await logActivity({
+        req,
+        user: apiUser,
+        action: "LOGIN_OTP_REQUIRED",
+        resource: "users",
+        resourceId: apiUser._id,
+        details: { emailSent: emailSend.sent },
+      });
+
+      return res.json({
+        requiresOtp: true,
+        tempToken,
+        message: emailSend.sent
+          ? "A 6-digit verification code was sent to your email."
+          : "A verification code was generated. SMTP is not configured; check the backend console.",
+        ...(exposeOtpForDevelopment ? { otpCode: otpResult.otpCode } : {}),
+      });
+    }
+
     await logActivity({
       req,
       user: apiUser,
@@ -111,6 +153,180 @@ exports.login = async (req, res, next) => {
     });
 
     res.json(withToken(apiUser, res));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Self-service signup for internal accounts. Gated by a secret invite code; the
+// new account must confirm an emailed OTP before a session is issued.
+exports.registerStaffAccount = async (req, res, next) => {
+  try {
+    const { name, email, password, role, inviteCode } = req.body;
+
+    const codeOk = await verifyInviteCode(inviteCode);
+    if (!codeOk) {
+      await logActivity({
+        req,
+        action: "STAFF_SIGNUP_DENIED",
+        resource: "users",
+        details: { email: typeof email === "string" ? email.trim().toLowerCase() : null, reason: "Invalid invite code" },
+      });
+      return res.status(403).json({ message: "Invalid invite code." });
+    }
+
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 120) {
+      return res.status(400).json({ message: "A name of at most 120 characters is required." });
+    }
+    if (typeof email !== "string" || email.trim().length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return res.status(400).json({ message: "Valid email address is required." });
+    }
+    const pwdError = validatePasswordStrength(password);
+    if (pwdError) {
+      return res.status(400).json({ message: pwdError });
+    }
+
+    const normalizedRole = role === "admin" ? "admin" : "staff";
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const taken = orThrow(
+      await supabase.from("users").select("id").eq("email", normalizedEmail).maybeSingle()
+    );
+    if (taken) return res.status(400).json({ message: "An account with this email already exists." });
+
+    const userId = newId();
+    orThrow(
+      await supabase
+        .from("users")
+        .insert({
+          id: userId,
+          name: name.trim(),
+          email: normalizedEmail,
+          password: await bcrypt.hash(password, 10),
+          role: normalizedRole,
+          isTwoFactorEnabled: true,
+        })
+        .select()
+        .single()
+    );
+
+    const otpResult = await createOtp(userId);
+    const emailSend = await sendOtpEmail({
+      to: normalizedEmail,
+      name: name.trim(),
+      otp: otpResult.otpCode,
+      subject: "Your LaundriTrack account is ready",
+      intro: `An account has been created for you as ${normalizedRole === "admin" ? "an administrator" : "a staff member"}. Confirm your email with the code below to finish signing in.`,
+    });
+
+    const tempToken = jwt.sign(
+      { id: userId, isPreAuth: true },
+      process.env.JWT_SECRET,
+      { expiresIn: "10m" }
+    );
+
+    console.log(`\n==========================================`);
+    console.log(`[SIGNUP OTP] Email: ${normalizedEmail}`);
+    if (exposeOtpForDevelopment) {
+      console.log(`[SIGNUP OTP] Code: ${otpResult.otpCode}`);
+    }
+    console.log(`==========================================\n`);
+
+    await logActivity({
+      req,
+      action: "STAFF_SIGNUP_REQUESTED",
+      resource: "users",
+      resourceId: userId,
+      details: { email: normalizedEmail, role: normalizedRole, emailSent: emailSend.sent },
+    });
+
+    res.status(201).json({
+      requiresOtp: true,
+      tempToken,
+      email: normalizedEmail,
+      message: emailSend.sent
+        ? "Account created. A confirmation code was sent to your email."
+        : "Account created. SMTP is not configured; check the backend console.",
+      ...(exposeOtpForDevelopment ? { otpCode: otpResult.otpCode } : {}),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Sensitive actions require a fresh email OTP even while logged in (Requirement: re-auth).
+exports.requestActionOtp = async (req, res, next) => {
+  try {
+    const row = orThrow(
+      await supabase.from("users").select("id, name, email").eq("id", req.user.id).single()
+    );
+
+    const otpResult = await createOtp(row.id);
+    const emailSend = await sendOtpEmail({
+      to: row.email,
+      name: row.name,
+      otp: otpResult.otpCode,
+    });
+
+    console.log(`\n==========================================`);
+    console.log(`[ACTION OTP] User: ${row.email}`);
+    if (exposeOtpForDevelopment) {
+      console.log(`[ACTION OTP] Code: ${otpResult.otpCode}`);
+    }
+    console.log(`==========================================\n`);
+
+    await logActivity({
+      req,
+      action: "ACTION_OTP_REQUESTED",
+      resource: "actions",
+      resourceId: row.id,
+      details: { emailSent: emailSend.sent },
+    });
+
+    res.json({
+      message: emailSend.sent
+        ? "A 6-digit confirmation code was sent to your email."
+        : "A confirmation code was generated. SMTP is not configured; check the backend console.",
+      ...(exposeOtpForDevelopment ? { otpCode: otpResult.otpCode } : {}),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.verifyActionOtp = async (req, res, next) => {
+  try {
+    const { otpCode } = req.body;
+    if (typeof otpCode !== "string" || !/^\d{6}$/.test(otpCode)) {
+      return res.status(400).json({ message: "A valid 6-digit confirmation code is required." });
+    }
+
+    const verification = await verifyOtp(req.user.id, otpCode);
+    if (!verification.success) {
+      await logActivity({
+        req,
+        action: "ACTION_OTP_FAILED",
+        resource: "actions",
+        resourceId: req.user.id,
+        details: verification.message,
+      });
+      return res.status(400).json({ message: verification.message });
+    }
+
+    const reauthToken = jwt.sign(
+      { id: req.user.id, purpose: "action-reauth" },
+      process.env.JWT_SECRET,
+      { expiresIn: "10m" }
+    );
+
+    await logActivity({
+      req,
+      action: "ACTION_OTP_VERIFIED",
+      resource: "actions",
+      resourceId: req.user.id,
+    });
+
+    res.json({ reauthToken, message: "Identity confirmed." });
   } catch (err) {
     next(err);
   }
@@ -351,7 +567,8 @@ exports.resetPassword = async (req, res, next) => {
       .from("users")
       .update({ password: hashedPassword })
       .eq("id", decoded.id)
-      .select("id, email");
+      .select("id, name, email, role")
+      .single();
 
     if (updated.error) {
       return res.status(500).json({ message: "Could not update password." });
@@ -362,10 +579,13 @@ exports.resetPassword = async (req, res, next) => {
       action: "PASSWORD_RESET",
       resource: "users",
       resourceId: decoded.id,
-      details: { email: updated.data?.[0]?.email || "unknown" },
+      details: { email: updated.data.email },
     });
 
-    return res.json({ message: "Password reset successful. You can log in with your new password." });
+    return res.json({
+      message: "Password reset successful. You are now signed in.",
+      ...withToken(toApi(updated.data), res),
+    });
   } catch (err) {
     next(err);
   }

@@ -10,6 +10,14 @@ const logActivity = async ({ req, user, action, resource, resourceId, details })
     const userInfo = user || req?.user || {};
     const ipAddress = req?.ip || req?.socket?.remoteAddress || "127.0.0.1";
 
+    const detailPayload =
+      details && typeof details === "object" ? { ...details } : details ? { note: details } : {};
+    // When a re-authenticated OTP backed the action, record who approved it for the audit trail.
+    if (req?.reauth?.verifiedAt) {
+      detailPayload.reauthVerifiedAt = req.reauth.verifiedAt;
+      detailPayload.approvedBy = `${userInfo.name || "System"} (${userInfo.role || "system"})`;
+    }
+
     await supabase.from("audit_logs").insert({
       id: newId(),
       userId: userInfo.id || userInfo._id || null,
@@ -18,7 +26,7 @@ const logActivity = async ({ req, user, action, resource, resourceId, details })
       action,
       resource,
       resourceId: resourceId ? String(resourceId) : null,
-      details: typeof details === "object" ? JSON.stringify(details) : String(details || ""),
+      details: JSON.stringify(detailPayload),
       ipAddress,
     });
   } catch (err) {
